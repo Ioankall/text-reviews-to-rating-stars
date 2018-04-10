@@ -1,7 +1,7 @@
-from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from keras.preprocessing.text import Tokenizer as Keras_Tokenizer
 from nltk.corpus import stopwords
-
+from sklearn.externals import joblib
 import re
 import json
 import time
@@ -58,7 +58,7 @@ def convert_to_int(wrd2id, text):
     return [token for sublist in token_seq_int for token in sublist]
 
 
-def process_data(mongoCursor, lexicon='load'):
+def process_data(mongoCursor, lexicon='load', using='tf-idf'):
     """
     Removes stopwords, punctuation and digits and then maps each word to a unique integer value.
     :param mongoCursor: input data inserted from mongo
@@ -81,32 +81,41 @@ def process_data(mongoCursor, lexicon='load'):
         text_data.append(clean_text)
         stars_data.append(review['stars'])
 
-    if lexicon == 'load':
-        print 'loading word index...'
-        with open('data/word_index.json', 'r') as fp:
-            wrd2id = json.load(fp)
+    if using == 'tokenizer':
+        if lexicon == 'load':
+            print 'loading word index...'
+            with open('data/word_index.json', 'r') as fp:
+                wrd2id = json.load(fp)
+                print('Found %s unique tokens' % len(wrd2id))
+        else:
+            print 'creating word index...'
+            count_vectorizer = CountVectorizer(input='content', analyzer='word', max_df=1.0, min_df=min_word_df,
+                                               max_features=vocabulary_size)
+            count_vectorizer.fit_transform(text_data)
+            vocabulary = count_vectorizer.vocabulary_
+            wrd2id = dict((w, i + 1) for i, w in enumerate(vocabulary))
             print('Found %s unique tokens' % len(wrd2id))
-    else:
-        print 'creating word index...'
-        count_vectorizer = CountVectorizer(input='content', analyzer='word', max_df=1.0, min_df=min_word_df,
-                                           max_features=vocabulary_size)
-        count_vectorizer.fit_transform(text_data)
-        vocabulary = count_vectorizer.vocabulary_
-        wrd2id = dict((w, i + 1) for i, w in enumerate(vocabulary))
-        print('Found %s unique tokens' % len(wrd2id))
-        print 'writting indexes...'
-        with open('data/word_index.json', 'w') as fp:
-            json.dump(wrd2id, fp)
+            print 'writting indexes...'
+            with open('data/word_index.json', 'w') as fp:
+                json.dump(wrd2id, fp)
+            processed_data = []
+            for text in text_data:
+                processed_data.append(convert_to_int(wrd2id, text))
+        end_time = time.time()
+        print "--- Process time: %s seconds ---" % (end_time - start_time)
+        return processed_data, stars_data
 
-    processed_data = []
-    for text in text_data:
-        processed_data.append(convert_to_int(wrd2id, text))
-
-    end_time = time.time()
-
-    print "--- Process time: %s seconds ---" % (end_time - start_time)
-
-    return processed_data, stars_data
+    elif using == 'tf-idf':
+        if lexicon == 'load':
+            vectorizer = joblib.load('./data/tf-idf.pkl')
+            X = vectorizer.transform(text_data)
+        else:
+            vectorizer = TfidfVectorizer(min_df=min_word_df, ngram_range=(1,2))
+            X = vectorizer.fit_transform(text_data)
+            joblib.dump(vectorizer, './data/tf-idf.pkl')
+        end_time = time.time()
+        print "--- Process time: %s seconds ---" % (end_time - start_time)
+        return X, stars_data
 
 
 def process_one(text):

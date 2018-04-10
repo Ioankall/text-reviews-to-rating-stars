@@ -1,7 +1,7 @@
 import numpy as np
 import json
 import time
-
+import attention
 from keras.preprocessing.sequence import pad_sequences
 from keras.layers import Dense, Dropout, Convolution1D, Activation, SpatialDropout1D, LSTM
 from keras.layers.wrappers import Bidirectional
@@ -71,6 +71,7 @@ def build_net_lstm(review_len, embedding_dims):
                             merge_mode='concat'))
     model.add(BatchNormalization())
     model.add(GlobalMaxPooling1D())
+    # model.add(AttentionWithContext())
     model.add(Dropout(0.4))
     model.add(Dense(5))
     model.add(Activation('softmax'))
